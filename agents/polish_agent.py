@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -77,35 +77,18 @@ class PolishAgent(BaseAgent):
         ]
 
         try:
-            if self.exp_config.provider == "evolink":
-                response_list = await generation_utils.call_evolink_text_with_retry_async(
-                    model_name=self.text_model_name,
-                    contents=content_list,
-                    config={
-                        "system_prompt": self.suggestion_system_prompt,
-                        "temperature": 1,
-                        "max_output_tokens": 50000,
-                    },
-                    max_attempts=3,
-                    retry_delay=10,
-                )
-            else:
-                from google.genai import types
-                response_list = await generation_utils.call_gemini_with_retry_async(
-                    model_name=self.text_model_name,
-                    contents=content_list,
-                    config=types.GenerateContentConfig(
-                        system_instruction=self.suggestion_system_prompt,
-                        temperature=1,
-                        candidate_count=1,
-                        max_output_tokens=50000,
-                    ),
-                    max_attempts=3,
-                    retry_delay=10,
-                )
+            response_list = await self.call_text_api(
+                contents=content_list,
+                model_name=self.text_model_name,
+                system_prompt=self.suggestion_system_prompt,
+                temperature=1,
+                max_output_tokens=50000,
+                max_attempts=3,
+                retry_delay=10,
+            )
             return response_list[0] if response_list else ""
         except Exception as e:
-            print(f"❌ Error during suggestion generation: {e}")
+            print(f"生成建议时出错: {e}")
             return ""
 
     async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -163,46 +146,25 @@ class PolishAgent(BaseAgent):
         ]
 
         try:
+            # Evolink 模式需要先上传参考图
+            image_urls = None
             if self.exp_config.provider == "evolink":
-                # Evolink 图像生成：先上传参考图获取 URL，再传给 image_urls
-                print(f"🎨 [Step 2a] 上传参考图到 Evolink 文件服务...")
+                print(f"[Polish] 上传参考图到 Evolink 文件服务...")
                 ref_image_url = await generation_utils.upload_image_to_evolink(
                     gt_image_b64, media_type=gt_image_mime
                 )
-                response_list = await generation_utils.call_evolink_image_with_retry_async(
-                    model_name=self.image_model_name,
-                    prompt=user_prompt,
-                    config={
-                        "aspect_ratio": data.get("additional_info", {}).get("rounded_ratio", "16:9"),
-                        "quality": data.get("additional_info", {}).get("image_resolution", "2K"),
-                        "image_urls": [ref_image_url],
-                    },
-                    max_attempts=5,
-                    retry_delay=30,
-                )
-            else:
-                from google.genai import types
-                gemini_image_size = image_utils.normalize_gemini_image_size(
-                    data.get("additional_info", {}).get("image_resolution", "1K"),
-                    default_size="1K",
-                )
-                response_list = await generation_utils.call_gemini_with_retry_async(
-                    model_name=self.image_model_name,
-                    contents=content_list,
-                    config=types.GenerateContentConfig(
-                        system_instruction=self.system_prompt,
-                        temperature=self.exp_config.temperature,
-                        candidate_count=1,
-                        max_output_tokens=50000,
-                        response_modalities=["IMAGE"],
-                        image_config=types.ImageConfig(
-                            aspect_ratio=data.get("additional_info", {}).get("rounded_ratio", "16:9"),
-                            image_size=gemini_image_size,
-                        ),
-                    ),
-                    max_attempts=5,
-                    retry_delay=30,
-                )
+                image_urls = [ref_image_url]
+
+            response_list = await self.call_image_api(
+                prompt=user_prompt,
+                model_name=self.image_model_name,
+                contents=content_list,
+                aspect_ratio=data.get("additional_info", {}).get("rounded_ratio", "16:9"),
+                image_resolution=data.get("additional_info", {}).get("image_resolution", "2K"),
+                image_urls=image_urls,
+                max_attempts=5,
+                retry_delay=30,
+            )
 
             if response_list and response_list[0]:
                 raw_image_b64 = response_list[0]
@@ -211,7 +173,7 @@ class PolishAgent(BaseAgent):
                 data[output_key] = raw_image_b64
                 data[output_mime_key] = image_utils.detect_image_mime_from_b64(raw_image_b64)
             else:
-                print(f"⚠️  No response from model")
+                print(f"模型未返回图像响应")
 
         except Exception as e:
             print(f"❌ Error during image generation: {e}")

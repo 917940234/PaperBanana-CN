@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -111,6 +111,25 @@ if evolink_api_key:
         print("警告：未安装 providers.evolink，Evolink Provider 不可用。")
 else:
     print("警告：未配置 Evolink API Key，Evolink Provider 不可用。")
+
+
+def _cleanup_evolink_provider():
+    """Shut down Evolink provider session on process exit."""
+    global evolink_provider
+    if evolink_provider is not None:
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(evolink_provider.close())
+            else:
+                loop.run_until_complete(evolink_provider.close())
+        except Exception:
+            pass
+
+
+import atexit
+atexit.register(_cleanup_evolink_provider)
 
 
 def init_evolink_provider(api_key: str, base_url: str = ""):

@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,7 +26,7 @@ import re
 # Ensure local imports work
 sys.path.append(os.getcwd())
 
-st.set_page_config(layout="wide", page_title="PaperVizAgent Referenced Eval Visualizer", page_icon="🍌")
+st.set_page_config(layout="wide", page_title="PaperBanana Referenced Eval Visualizer", page_icon="🍌")
 
 
 def detect_task_type(data):
@@ -186,7 +186,7 @@ async def run_eval_on_sample(sample, task_name="diagram"):
     return await get_score_for_image_referenced(sample, task_name=task_name)
 
 def main():
-    st.sidebar.title("🍌 PaperVizAgent Referenced Eval")
+    st.sidebar.title("🍌 PaperBanana Referenced Eval")
     file_path = st.sidebar.text_input("Results JSONL Path", placeholder="Enter path to results file...")
     
     # --- Debug Tool Section in Sidebar ---

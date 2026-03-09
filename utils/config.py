@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,11 +16,15 @@
 Configuration for experiments
 """
 
-import os
-import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo  # Python < 3.9 fallback
 
 
 @dataclass
@@ -40,16 +44,11 @@ class ExpConfig:
     image_model_name: str = ""
     provider: str = "evolink"
     work_dir: Path = Path(__file__).parent.parent
+    timezone: str = "America/Los_Angeles"
 
     timestamp: str | None = None
 
     def __post_init__(self):
-        os.environ["TZ"] = "America/Los_Angeles" # set the timezone as you like
-        try:
-            time.tzset()  # Only needed once after setting TZ (Unix only)
-        except AttributeError:
-            pass  # Windows doesn't have time.tzset()
-        
         # Fallback to yaml config if no model_name provided
         if not self.model_name or not self.image_model_name:
             import yaml
@@ -61,9 +60,11 @@ class ExpConfig:
                         self.model_name = model_config_data.get("defaults", {}).get("model_name", "")
                     if not self.image_model_name:
                         self.image_model_name = model_config_data.get("defaults", {}).get("image_model_name", "")
-        self.timestamp = (
-            time.strftime("%m%d_%H%M") if self.timestamp is None else self.timestamp
-        )
+
+        if self.timestamp is None:
+            tz = ZoneInfo(self.timezone)
+            self.timestamp = datetime.now(tz).strftime("%m%d_%H%M")
+
         self.exp_name = f"{self.timestamp}_{self.retrieval_setting}ret_{self.exp_mode}_{self.split_name}"
 
         # mkdir result_dir if not exists

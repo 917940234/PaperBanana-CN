@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Main script to launch PaperVizAgent
+Main script to launch PaperBanana
 """
 
 import asyncio
@@ -22,6 +22,9 @@ import argparse
 from pathlib import Path
 import aiofiles
 import numpy as np
+
+from utils.log_config import setup_logging
+setup_logging("INFO")
 
 from agents.vanilla_agent import VanillaAgent
 from agents.planner_agent import PlannerAgent
@@ -37,7 +40,7 @@ from utils import config, paperviz_processor
 async def main():
     """Main function"""
     # add command line args
-    parser = argparse.ArgumentParser(description="PaperVizAgent processing script")
+    parser = argparse.ArgumentParser(description="PaperBanana processing script")
     parser.add_argument(
         "--dataset_name",
         type=str,
@@ -116,7 +119,7 @@ async def main():
     )
 
     # Batch process documents
-    concurrent_num = 10
+    concurrent_num = exp_config.max_concurrent
     print(f"Using max concurrency: {concurrent_num}")
     all_result_list = []
 

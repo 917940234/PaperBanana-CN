@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,47 +16,15 @@
 Visualizer Agent - 将详细描述转换为图像或代码。
 """
 
+import os
 from concurrent.futures import ProcessPoolExecutor
 from typing import Dict, Any
 import base64, io, asyncio, re
-import matplotlib.pyplot as plt
 from PIL import Image
 
 from utils import generation_utils, image_utils
+from utils.plot_executor import execute_plot_code
 from .base_agent import BaseAgent
-
-
-def _execute_plot_code_worker(code_text: str) -> str:
-    """
-    Independent plot code execution worker:
-    1. Extract code
-    2. Execute plotting
-    3. Return JPEG as Base64 string
-    """
-    match = re.search(r"```python(.*?)```", code_text, re.DOTALL)
-    code_clean = match.group(1).strip() if match else code_text.strip()
-
-    plt.switch_backend("Agg")
-    plt.close("all")
-    plt.rcdefaults()
-
-    try:
-        exec_globals = {}
-        exec(code_clean, exec_globals)
-        if plt.get_fignums():
-            buf = io.BytesIO()
-            plt.savefig(buf, format="jpeg", bbox_inches="tight", dpi=300)
-            plt.close("all")
-
-            buf.seek(0)
-            img_bytes = buf.read()
-            return base64.b64encode(img_bytes).decode("utf-8")
-        else:
-            return None
-
-    except Exception as e:
-        print(f"Error executing plot code: {e}")
-        return None
 
 
 def _safe_preview_for_log(value, max_len: int = 20) -> str:
@@ -84,7 +52,9 @@ class VisualizerAgent(BaseAgent):
         if "plot" in self.exp_config.task_name:
             self.model_name = self.exp_config.model_name
             self.system_prompt = PLOT_VISUALIZER_AGENT_SYSTEM_PROMPT
-            self.process_executor = ProcessPoolExecutor(max_workers=32)
+            self.process_executor = ProcessPoolExecutor(
+                max_workers=min(os.cpu_count() or 4, 8)
+            )
             self.task_config = {
                 "task_name": "plot",
                 "use_image_generation": False,
@@ -102,9 +72,11 @@ class VisualizerAgent(BaseAgent):
                 "max_output_tokens": 50000,
             }
 
-    def __del__(self):
+    def shutdown(self):
+        """Explicitly shut down the process pool executor."""
         if self.process_executor:
-            self.process_executor.shutdown(wait=True)
+            self.process_executor.shutdown(wait=False)
+            self.process_executor = None
 
     async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
         cfg = self.task_config
@@ -269,11 +241,13 @@ class VisualizerAgent(BaseAgent):
             else:
                 raw_code = response_list[0]
 
-                if not hasattr(self, "process_executor") or self.process_executor is None:
-                    self.process_executor = ProcessPoolExecutor(max_workers=4)
+                if self.process_executor is None:
+                    self.process_executor = ProcessPoolExecutor(
+                        max_workers=min(os.cpu_count() or 4, 8)
+                    )
 
                 base64_jpg = await loop.run_in_executor(
-                    self.process_executor, _execute_plot_code_worker, raw_code
+                    self.process_executor, execute_plot_code, raw_code
                 )
                 data[f"{desc_key}_code"] = raw_code
 

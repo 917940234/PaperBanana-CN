@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -106,35 +106,12 @@ class CriticAgent(BaseAgent):
             "text": f"Detailed Description: {detailed_description}\n{cfg['context_labels'][0]}: {content}\n{cfg['context_labels'][1]}: {visual_intent}\nYour Output:",
         })
 
-        # 根据 provider 路由 API 调用
-        if self.exp_config.provider == "evolink":
-            response_list = await generation_utils.call_evolink_text_with_retry_async(
-                model_name=self.model_name,
-                contents=content_list,
-                config={
-                    "system_prompt": self.system_prompt,
-                    "temperature": self.exp_config.temperature,
-                    "max_output_tokens": 50000,
-                },
-                max_attempts=5,
-                retry_delay=5,
-                error_context=f"critic[candidate={candidate_id},round={round_idx}]",
-            )
-        else:
-            from google.genai import types
-            response_list = await generation_utils.call_gemini_with_retry_async(
-                model_name=self.model_name,
-                contents=content_list,
-                config=types.GenerateContentConfig(
-                    system_instruction=self.system_prompt,
-                    temperature=self.exp_config.temperature,
-                    candidate_count=1,
-                    max_output_tokens=50000,
-                ),
-                max_attempts=5,
-                retry_delay=5,
-                error_context=f"critic[candidate={candidate_id},round={round_idx}]",
-            )
+        # 调用文本生成 API（自动路由到对应 provider）
+        response_list = await self.call_text_api(
+            contents=content_list,
+            max_output_tokens=50000,
+            error_context=f"critic[candidate={candidate_id},round={round_idx}]",
+        )
 
         cleaned_response = (
             response_list[0].replace("```json", "").replace("```", "").strip()
@@ -145,7 +122,10 @@ class CriticAgent(BaseAgent):
                 eval_result = {}
         except Exception as e:
             eval_result = {}
-            print(e, cleaned_response)
+            import traceback
+            print(f"[WARN] [CriticAgent] Failed to parse JSON response: {e}")
+            print(f"[WARN] [CriticAgent] Traceback: {traceback.format_exc()}")
+            print(f"[WARN] [CriticAgent] Raw response (first 500 chars): {cleaned_response[:500]}")
 
         critic_suggestions = eval_result.get("critic_suggestions", "No changes needed.")
         revised_description = eval_result.get("revised_description", "No changes needed.")

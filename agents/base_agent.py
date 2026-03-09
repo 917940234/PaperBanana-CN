@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,11 +16,8 @@
 Base class for agents
 """
 
-import re
 from typing import List, Dict, Any
 from abc import ABC, abstractmethod
-
-import json_repair
 
 from utils.config import ExpConfig
 
@@ -41,12 +38,175 @@ class BaseAgent(ABC):
     @abstractmethod
     async def process(self, data: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """
-        Process the input data and return the result.
-        
+        处理输入数据并返回结果。
+
         Args:
-            data: Input data dictionary
-            **kwargs: Additional subclass-specific parameters
-        
+            data: 输入数据字典
+            **kwargs: 子类附加参数
+
         Returns:
-            Processed data dictionary
+            处理后的数据字典
         """
+
+    # ==================== 统一 Provider 路由 ====================
+
+    async def call_text_api(
+        self,
+        contents: List[Dict[str, Any]],
+        *,
+        model_name: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        max_output_tokens: int = 50000,
+        max_attempts: int = 5,
+        retry_delay: float = 5,
+        error_context: str = "",
+    ) -> List[str]:
+        """
+        统一的文本生成 API 调用，根据 provider 自动路由到 Evolink / Gemini。
+
+        Args:
+            contents: 通用内容列表（文本和图片混合）
+            model_name: 模型名称，默认使用 self.model_name
+            system_prompt: 系统提示词，默认使用 self.system_prompt
+            temperature: 温度参数，默认使用 self.exp_config.temperature
+            max_output_tokens: 最大输出 token 数
+            max_attempts: 最大重试次数
+            retry_delay: 重试间隔（秒）
+            error_context: 错误上下文信息
+
+        Returns:
+            响应文本列表
+        """
+        from utils import generation_utils
+
+        _model = model_name or self.model_name
+        _sys = system_prompt or self.system_prompt
+        _temp = temperature if temperature is not None else self.exp_config.temperature
+
+        if self.exp_config.provider == "evolink":
+            return await generation_utils.call_evolink_text_with_retry_async(
+                model_name=_model,
+                contents=contents,
+                config={
+                    "system_prompt": _sys,
+                    "temperature": _temp,
+                    "max_output_tokens": max_output_tokens,
+                },
+                max_attempts=max_attempts,
+                retry_delay=retry_delay,
+                error_context=error_context,
+            )
+        else:
+            from google.genai import types
+
+            return await generation_utils.call_gemini_with_retry_async(
+                model_name=_model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=_sys,
+                    temperature=_temp,
+                    candidate_count=1,
+                    max_output_tokens=max_output_tokens,
+                ),
+                max_attempts=max_attempts,
+                retry_delay=retry_delay,
+                error_context=error_context,
+            )
+
+    async def call_image_api(
+        self,
+        prompt: str,
+        *,
+        model_name: str | None = None,
+        contents: List[Dict[str, Any]] | None = None,
+        system_prompt: str | None = None,
+        temperature: float | None = None,
+        aspect_ratio: str = "1:1",
+        image_resolution: str = "2K",
+        image_urls: List[str] | None = None,
+        max_output_tokens: int = 50000,
+        max_attempts: int = 5,
+        retry_delay: float = 30,
+        error_context: str = "",
+    ) -> List[str]:
+        """
+        统一的图像生成 API 调用，根据 provider 自动路由到 Evolink / Gemini / OpenAI。
+
+        Args:
+            prompt: 图像描述提示词
+            model_name: 图像模型名称，默认使用 self.model_name
+            contents: 通用内容列表（Gemini 模式使用）
+            system_prompt: 系统提示词
+            temperature: 温度参数
+            aspect_ratio: 宽高比
+            image_resolution: 图像分辨率
+            image_urls: 参考图片 URL 列表（Evolink 用于 image-to-image）
+            max_output_tokens: 最大输出 token 数
+            max_attempts: 最大重试次数
+            retry_delay: 重试间隔（秒）
+            error_context: 错误上下文信息
+
+        Returns:
+            base64 编码的图像字符串列表
+        """
+        from utils import generation_utils, image_utils
+
+        _model = model_name or self.model_name
+        _sys = system_prompt or self.system_prompt
+        _temp = temperature if temperature is not None else self.exp_config.temperature
+        _contents = contents or [{"type": "text", "text": prompt}]
+
+        if self.exp_config.provider == "evolink":
+            config = {
+                "aspect_ratio": aspect_ratio,
+                "quality": image_resolution,
+            }
+            if image_urls:
+                config["image_urls"] = image_urls
+            return await generation_utils.call_evolink_image_with_retry_async(
+                model_name=_model,
+                prompt=prompt,
+                config=config,
+                max_attempts=max_attempts,
+                retry_delay=retry_delay,
+                error_context=error_context,
+            )
+        elif "gpt-image" in _model:
+            return await generation_utils.call_openai_image_generation_with_retry_async(
+                model_name=_model,
+                prompt=prompt,
+                config={
+                    "size": "1536x1024",
+                    "quality": "high",
+                    "background": "opaque",
+                    "output_format": "png",
+                },
+                max_attempts=max_attempts,
+                retry_delay=retry_delay,
+                error_context=error_context,
+            )
+        else:
+            from google.genai import types
+
+            gemini_image_size = image_utils.normalize_gemini_image_size(
+                image_resolution, default_size="1K"
+            )
+            return await generation_utils.call_gemini_with_retry_async(
+                model_name=_model,
+                contents=_contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=_sys,
+                    temperature=_temp,
+                    candidate_count=1,
+                    max_output_tokens=max_output_tokens,
+                    response_modalities=["IMAGE"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=aspect_ratio,
+                        image_size=gemini_image_size,
+                    ),
+                ),
+                max_attempts=max_attempts,
+                retry_delay=retry_delay,
+                error_context=error_context,
+            )

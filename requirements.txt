@@ -1,6 +1,5 @@
 google-genai
 streamlit
-asyncio
 aiofiles
 pillow
 numpy

@@ -9,10 +9,10 @@ COPY requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (filtered by .dockerignore)
 COPY . .
-# Ensure data directory exists and has permissions
-RUN mkdir -p data/PaperBananaBench/diagram data/PaperBananaBench/plot && chmod -R 777 data
+# Ensure data directory exists with reasonable permissions
+RUN mkdir -p data/PaperBananaBench/diagram data/PaperBananaBench/plot && chmod -R 770 data
 
 # Expose port
 EXPOSE 8080

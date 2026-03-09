@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     http://www.apache.org/licenses/LICENSE-
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -97,45 +97,18 @@ class PlannerAgent(BaseAgent):
         content_list.append({"type": "text", "text": user_prompt})
         print(f"[DEBUG] [PlannerAgent] content_list 长度={len(content_list)}, 示例数={len(examples)}")
 
-        # 根据 provider 路由 API 调用
-        if self.exp_config.provider == "evolink":
-            response_list = await generation_utils.call_evolink_text_with_retry_async(
-                model_name=self.model_name,
-                contents=content_list,
-                config={
-                    "system_prompt": self.system_prompt,
-                    "temperature": self.exp_config.temperature,
-                    "max_output_tokens": 50000,
-                },
-                max_attempts=5,
-                retry_delay=5,
-                error_context=f"planner[candidate={candidate_id}]",
-            )
-        else:
-            from google.genai import types
-            response_list = await generation_utils.call_gemini_with_retry_async(
-                model_name=self.model_name,
-                contents=content_list,
-                config=types.GenerateContentConfig(
-                    system_instruction=self.system_prompt,
-                    temperature=self.exp_config.temperature,
-                    candidate_count=1,
-                    max_output_tokens=50000,
-                ),
-                max_attempts=5,
-                retry_delay=5,
-                error_context=f"planner[candidate={candidate_id}]",
-            )
+        # 调用文本生成 API（自动路由到对应 provider）
+        response_list = await self.call_text_api(
+            contents=content_list,
+            max_output_tokens=50000,
+            error_context=f"planner[candidate={candidate_id}]",
+        )
 
         for idx, response in enumerate(response_list):
             data[f"target_{cfg['task_name']}_desc{idx}"] = response.strip()
 
         print(f"[DEBUG] [PlannerAgent] 完成, 生成 {len(response_list)} 个描述, desc0 长度={len(response_list[0]) if response_list else 0}")
         return data
-
-
-
-
 DIAGRAM_PLANNER_AGENT_SYSTEM_PROMPT = """
 I am working on a task: given the 'Methodology' section of a paper, and the caption of the desired figure, automatically generate a corresponding illustrative diagram. I will input the text of the 'Methodology' section, the figure caption, and your output should be a detailed description of an illustrative figure that effectively represents the methods described in the text.
 
