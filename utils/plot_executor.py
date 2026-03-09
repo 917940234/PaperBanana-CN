@@ -19,8 +19,11 @@
 import base64
 import io
 import re
+import logging
 
 import matplotlib.pyplot as plt
+
+logger = logging.getLogger("PlotExecutor")
 
 
 def execute_plot_code(code_text: str, dpi: int = 300) -> str | None:
@@ -62,5 +65,5 @@ def execute_plot_code(code_text: str, dpi: int = 300) -> str | None:
             return None
 
     except Exception as e:
-        print(f"执行绘图代码出错: {e}")
+        logger.error(f"❌ 执行绘图代码出错: {e}")
         return None

@@ -31,6 +31,10 @@ from utils.generation_utils import (
     call_openai_with_retry_async,
 )
 
+from utils.log_config import get_logger
+
+logger = get_logger("EvalToolkits")
+
 # Prompt mapping: task_name -> eval_dim -> system_prompt
 PROMPT_MAP = {
     "diagram": {
@@ -88,9 +92,9 @@ def _extract_winner_with_fallback(clean_json: str, eval_dim: str, valid_winners:
     """Try regex extraction and return winner or 'Error'."""
     extracted = _try_regex_extract_winner(clean_json)
     if extracted and extracted in valid_winners:
-        print(f"⚠️  {eval_dim}: regex extracted '{extracted}'")
+        logger.warning(f"⚠️  {eval_dim}: 通过 regex 提取到 '{extracted}'")
         return extracted
-    print(f"⚠️  {eval_dim}: failed to extract valid winner")
+    logger.warning(f"⚠️  {eval_dim}: 无法提取有效的 winner")
     return "Error"
 
 
@@ -222,7 +226,7 @@ async def _run_single_eval_ref(
         
         return eval_dim, res_obj
     except Exception as e:
-        print(f"❌ {eval_dim}: Evaluation failed - {str(e)[:100]}")
+        logger.error(f"❌ {eval_dim}: 评估失败 - {str(e)[:100]}")
         extracted = _try_regex_extract_winner(clean_json) if 'clean_json' in locals() else None
         winner = extracted if (extracted and extracted in valid_winners) else "Error"
         return eval_dim, {"comparison_reasoning": str(e), "winner": winner}
@@ -245,7 +249,7 @@ async def get_score_for_image_referenced(
     visual_intent = sample_data["visual_intent"]
     
     if "path_to_gt_image" not in sample_data:
-        print("⚠️  No ground truth image path found. Skipping evaluation.")
+        logger.warning("⚠️  未找到 Ground Truth 图像路径，跳过评估")
         for dim in ["faithfulness", "conciseness", "readability", "aesthetics", "overall"]:
              sample_data[f"{dim}_outcome"] = "N/A - No GT"
         return sample_data
@@ -268,7 +272,7 @@ async def get_score_for_image_referenced(
     
     # Check if image was successfully generated
     if eval_image_field not in sample_data:
-        print(f"⚠️  Image field '{eval_image_field}' not found. Model generation failed - counting as Human win.")
+        logger.warning(f"⚠️  图像字段 '{eval_image_field}' 未找到，模型生成失败 — 默认判定 Human 胜出")
         # Model failed to generate image, Human wins by default
         for dim in ["faithfulness", "conciseness", "readability", "aesthetics", "overall"]:
             sample_data[f"{dim}_reasoning"] = "Model failed to generate image - Human wins by default"

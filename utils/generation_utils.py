@@ -31,6 +31,10 @@ import os
 import yaml
 from pathlib import Path
 
+from utils.log_config import get_logger
+
+logger = get_logger("GenerationUtils")
+
 # ==================== 配置加载 ====================
 
 config_path = Path(__file__).parent.parent / "configs" / "model_config.yaml"
@@ -76,14 +80,11 @@ def _safe_text_for_log(value: Any, max_len: int = 6000) -> str:
 
 
 def _safe_log(message: Any) -> None:
-    """Best-effort logging that never raises to caller."""
+    """尽力输出日志，永远不会向调用方抛出异常。"""
     try:
-        print(_safe_text_for_log(message))
+        logger.debug(_safe_text_for_log(message))
     except Exception:
-        try:
-            print(repr(message))
-        except Exception:
-            pass
+        pass
 
 
 def _emit_runtime_status(message: str) -> None:
@@ -106,11 +107,11 @@ if evolink_api_key:
     try:
         from providers.evolink import EvolinkProvider
         evolink_provider = EvolinkProvider(api_key=evolink_api_key, base_url=evolink_base_url)
-        print(f"已初始化 Evolink Provider (base_url={evolink_base_url})")
+        logger.info(f"✅ 已初始化 Evolink Provider (base_url={evolink_base_url})")
     except ImportError:
-        print("警告：未安装 providers.evolink，Evolink Provider 不可用。")
+        logger.warning("⚠️  未安装 providers.evolink，Evolink Provider 不可用")
 else:
-    print("警告：未配置 Evolink API Key，Evolink Provider 不可用。")
+    logger.warning("⚠️  未配置 Evolink API Key，Evolink Provider 不可用")
 
 
 def _cleanup_evolink_provider():
@@ -140,7 +141,7 @@ def init_evolink_provider(api_key: str, base_url: str = ""):
     url = base_url or evolink_base_url
     from providers.evolink import EvolinkProvider
     evolink_provider = EvolinkProvider(api_key=api_key, base_url=url)
-    print(f"已通过界面初始化 Evolink Provider (base_url={url})")
+    logger.info(f"✅ 已通过界面初始化 Evolink Provider (base_url={url})")
 
 
 def init_gemini_client(api_key: str):
@@ -151,9 +152,9 @@ def init_gemini_client(api_key: str):
     try:
         from google import genai
         gemini_client = genai.Client(api_key=api_key)
-        print("已通过界面初始化 Gemini Client")
+        logger.info("✅ 已通过界面初始化 Gemini Client")
     except ImportError:
-        print("警告：未安装 google-genai，Gemini Client 不可用。请运行 pip install google-genai")
+        logger.warning("⚠️  未安装 google-genai，Gemini Client 不可用。请运行 pip install google-genai")
 
 
 # ==================== 原始 Provider 初始化（保留兼容性） ====================
@@ -168,27 +169,27 @@ if api_key:
         from google import genai
         from google.genai import types
         gemini_client = genai.Client(api_key=api_key)
-        print("已初始化 Gemini Client")
+        logger.info("✅ 已初始化 Gemini Client")
     except ImportError:
-        print("警告：未安装 google-genai，Gemini Client 不可用。")
+        logger.warning("⚠️  未安装 google-genai，Gemini Client 不可用")
 
 anthropic_api_key = get_config_val("api_keys", "anthropic_api_key", "ANTHROPIC_API_KEY", "")
 if anthropic_api_key:
     try:
         from anthropic import AsyncAnthropic
         anthropic_client = AsyncAnthropic(api_key=anthropic_api_key)
-        print("已初始化 Anthropic Client")
+        logger.info("✅ 已初始化 Anthropic Client")
     except ImportError:
-        print("警告：未安装 anthropic，Anthropic Client 不可用。")
+        logger.warning("⚠️  未安装 anthropic，Anthropic Client 不可用")
 
 openai_api_key = get_config_val("api_keys", "openai_api_key", "OPENAI_API_KEY", "")
 if openai_api_key:
     try:
         from openai import AsyncOpenAI
         openai_client = AsyncOpenAI(api_key=openai_api_key)
-        print("已初始化 OpenAI Client")
+        logger.info("✅ 已初始化 OpenAI Client")
     except ImportError:
-        print("警告：未安装 openai，OpenAI Client 不可用。")
+        logger.warning("⚠️  未安装 openai，OpenAI Client 不可用")
 
 
 # ==================== Evolink 调用函数 ====================
@@ -207,7 +208,7 @@ async def call_evolink_text_with_retry_async(
         retry_delay: 重试间隔
         error_context: 错误上下文
     """
-    print(f"[DEBUG] call_evolink_text: model={model_name}, provider={'已初始化' if evolink_provider else '未初始化'}")
+    logger.debug(f"📤 call_evolink_text: model={model_name}, provider={'已初始化' if evolink_provider else '未初始化'}")
     if evolink_provider is None:
         raise RuntimeError("Evolink Provider 未初始化，请检查 EVOLINK_API_KEY 配置。")
 
@@ -216,17 +217,17 @@ async def call_evolink_text_with_retry_async(
         system_prompt = config.system_instruction or ""
         temperature = config.temperature
         max_output_tokens = config.max_output_tokens
-        print(f"[DEBUG] call_evolink_text: 从 GenerateContentConfig 提取参数")
+        logger.debug("📋 call_evolink_text: 从 GenerateContentConfig 提取参数")
     elif isinstance(config, dict):
         system_prompt = config.get("system_prompt", "")
         temperature = config.get("temperature", 1.0)
         max_output_tokens = config.get("max_output_tokens", 50000)
-        print(f"[DEBUG] call_evolink_text: 从 dict 提取参数")
+        logger.debug("📋 call_evolink_text: 从 dict 提取参数")
     else:
         system_prompt = ""
         temperature = 1.0
         max_output_tokens = 50000
-        print(f"[DEBUG] call_evolink_text: 使用默认参数, config type={type(config)}")
+        logger.debug(f"📋 call_evolink_text: 使用默认参数, config type={type(config)}")
 
     return await evolink_provider.generate_text(
         model_name=model_name,
@@ -269,7 +270,7 @@ async def call_evolink_image_with_retry_async(
         retry_delay: 重试间隔
         error_context: 错误上下文
     """
-    print(f"[DEBUG] call_evolink_image: model={model_name}, config={config}, provider={'已初始化' if evolink_provider else '未初始化'}")
+    logger.debug(f"🖼️ call_evolink_image: model={model_name}, config={config}, provider={'已初始化' if evolink_provider else '未初始化'}")
     if evolink_provider is None:
         raise RuntimeError("Evolink Provider 未初始化，请检查 EVOLINK_API_KEY 配置。")
 
@@ -731,12 +732,12 @@ async def call_claude_with_retry_async(
         except Exception as e:
             error_str = str(e).lower()
             context_msg = f" for {error_context}" if error_context else ""
-            print(f"Validation attempt {attempt + 1} failed{context_msg}: {error_str}. Retrying in {retry_delay} seconds...")
+            logger.warning(f"⚠️  验证第 {attempt + 1} 次尝试失败{context_msg}: {error_str}。{retry_delay}s 后重试...")
             if attempt < max_attempts - 1:
                 await asyncio.sleep(retry_delay)
 
     if not is_input_valid:
-        print(f"Error: All {max_attempts} attempts failed to validate the input. Returning errors.")
+        logger.error(f"❌ 全部 {max_attempts} 次验证尝试失败，返回错误")
         return ["Error"] * candidate_num
 
     remaining_candidates = candidate_num - 1
@@ -792,12 +793,12 @@ async def call_openai_with_retry_async(
         except Exception as e:
             error_str = str(e).lower()
             context_msg = f" for {error_context}" if error_context else ""
-            print(f"Validation attempt {attempt + 1} failed{context_msg}: {error_str}. Retrying in {retry_delay} seconds...")
+            logger.warning(f"⚠️  验证第 {attempt + 1} 次尝试失败{context_msg}: {error_str}。{retry_delay}s 后重试...")
             if attempt < max_attempts - 1:
                 await asyncio.sleep(retry_delay)
 
     if not is_input_valid:
-        print(f"Error: All {max_attempts} attempts failed to validate the input. Returning errors.")
+        logger.error(f"❌ 全部 {max_attempts} 次验证尝试失败，返回错误")
         return ["Error"] * candidate_num
 
     remaining_candidates = candidate_num - 1
@@ -850,17 +851,17 @@ async def call_openai_image_generation_with_retry_async(
             if response.data and response.data[0].b64_json:
                 return [response.data[0].b64_json]
             else:
-                print(f"[Warning]: Failed to generate image via OpenAI, no data returned.")
+                logger.warning("⚠️  OpenAI 图像生成失败，未返回数据")
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(retry_delay)
                 continue
         except Exception as e:
             context_msg = f" for {error_context}" if error_context else ""
-            print(f"Attempt {attempt + 1} for OpenAI image generation model {model_name} failed{context_msg}: {e}. Retrying in {retry_delay} seconds...")
+            logger.warning(f"⚠️  OpenAI 图像生成第 {attempt + 1} 次尝试失败{context_msg}: {e}。{retry_delay}s 后重试...")
             if attempt < max_attempts - 1:
                 await asyncio.sleep(retry_delay)
             else:
-                print(f"Error: All {max_attempts} attempts failed{context_msg}")
+                logger.error(f"❌ OpenAI 图像生成全部 {max_attempts} 次尝试失败{context_msg}")
                 return ["Error"]
 
     return ["Error"]

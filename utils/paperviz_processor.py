@@ -34,6 +34,10 @@ from agents.polish_agent import PolishAgent
 from .config import ExpConfig
 from .eval_toolkits import get_score_for_image_referenced
 
+from utils.log_config import get_logger
+
+logger = get_logger("PaperVizProcessor")
+
 
 class PaperVizProcessor:
     """Main class for multimodal document processor"""
@@ -69,7 +73,7 @@ class PaperVizProcessor:
         try:
             status_callback(f"候选 {candidate_id}: {stage}")
         except Exception as err:
-            print(f"[DEBUG] [WARN] status_callback 失败: {err}")
+            logger.warning(f"⚠️  status_callback 失败: {err}")
 
     async def _run_critic_iterations(
         self,
@@ -109,7 +113,7 @@ class PaperVizProcessor:
             critic_suggestions = data.get(critic_suggestions_key, "")
             
             if critic_suggestions.strip() == "No changes needed.":
-                print(f"[Critic Round {round_idx}] No changes needed. Stopping iteration.")
+                logger.info(f"✅ Critic 第 {round_idx} 轮无需修改，停止迭代")
                 self._emit_status(
                     status_callback,
                     candidate_id,
@@ -123,14 +127,14 @@ class PaperVizProcessor:
             new_image_key = f"target_{task_name}_critic_desc{round_idx}_base64_jpg"
             if new_image_key in data and data[new_image_key]:
                 current_best_image_key = new_image_key
-                print(f"[Critic Round {round_idx}] Completed iteration. Visualization SUCCESS.")
+                logger.info(f"✅ Critic 第 {round_idx} 轮完成，可视化成功")
                 self._emit_status(
                     status_callback,
                     candidate_id,
                     f"critic 第 {round_idx + 1}/{max_rounds} 轮可视化成功",
                 )
             else:
-                print(f"[Critic Round {round_idx}] Visualization FAILED (No valid image). Rolling back to previous best: {current_best_image_key}")
+                logger.warning(f"⚠️  Critic 第 {round_idx} 轮可视化失败（无有效图像），回滚到: {current_best_image_key}")
                 self._emit_status(
                     status_callback,
                     candidate_id,
@@ -154,58 +158,58 @@ class PaperVizProcessor:
         exp_mode = self.exp_config.exp_mode
         task_name = self.exp_config.task_name.lower()
         retrieval_setting = self.exp_config.retrieval_setting
-        print(f"\n[DEBUG] ── process_single_query 开始 ── candidate={candidate_id}")
-        print(f"[DEBUG]   exp_mode={exp_mode}, task={task_name}, retrieval={retrieval_setting}, provider={self.exp_config.provider}")
+        logger.debug(f"\n── process_single_query 开始 ── candidate={candidate_id}")
+        logger.debug(f"   exp_mode={exp_mode}, task={task_name}, retrieval={retrieval_setting}, provider={self.exp_config.provider}")
         self._emit_status(status_callback, candidate_id, "开始处理")
 
         if exp_mode == "vanilla":
-            print(f"[DEBUG] [{candidate_id}] 流水线: vanilla_agent")
+            logger.debug(f"[{candidate_id}] 流水线: vanilla_agent")
             self._emit_status(status_callback, candidate_id, "vanilla 生成中")
             data = await self.vanilla_agent.process(data)
             data["eval_image_field"] = f"vanilla_{task_name}_base64_jpg"
 
         elif exp_mode == "dev_planner":
-            print(f"[DEBUG] [{candidate_id}] 流水线: retriever → planner → visualizer")
+            logger.debug(f"[{candidate_id}] 流水线: retriever → planner → visualizer")
             self._emit_status(status_callback, candidate_id, "retriever 检索中")
             data = await self.retriever_agent.process(data, retrieval_setting=retrieval_setting)
-            print(f"[DEBUG] [{candidate_id}] [OK] retriever 完成")
+            logger.debug(f"[{candidate_id}] ✅ retriever 完成")
             self._emit_status(status_callback, candidate_id, "planner 规划中")
             data = await self.planner_agent.process(data)
-            print(f"[DEBUG] [{candidate_id}] [OK] planner 完成")
+            logger.debug(f"[{candidate_id}] ✅ planner 完成")
             self._emit_status(status_callback, candidate_id, "visualizer 生图中")
             data = await self.visualizer_agent.process(data)
-            print(f"[DEBUG] [{candidate_id}] [OK] visualizer 完成")
+            logger.debug(f"[{candidate_id}] ✅ visualizer 完成")
             data["eval_image_field"] = f"target_{task_name}_desc0_base64_jpg"
 
         elif exp_mode == "dev_planner_stylist":
-            print(f"[DEBUG] [{candidate_id}] 流水线: retriever → planner → stylist → visualizer")
+            logger.debug(f"[{candidate_id}] 流水线: retriever → planner → stylist → visualizer")
             self._emit_status(status_callback, candidate_id, "retriever 检索中")
             data = await self.retriever_agent.process(data, retrieval_setting=retrieval_setting)
-            print(f"[DEBUG] [{candidate_id}] [OK] retriever 完成")
+            logger.debug(f"[{candidate_id}] ✅ retriever 完成")
             self._emit_status(status_callback, candidate_id, "planner 规划中")
             data = await self.planner_agent.process(data)
-            print(f"[DEBUG] [{candidate_id}] [OK] planner 完成")
+            logger.debug(f"[{candidate_id}] ✅ planner 完成")
             self._emit_status(status_callback, candidate_id, "stylist 风格优化中")
             data = await self.stylist_agent.process(data)
-            print(f"[DEBUG] [{candidate_id}] [OK] stylist 完成")
+            logger.debug(f"[{candidate_id}] ✅ stylist 完成")
             self._emit_status(status_callback, candidate_id, "visualizer 生图中")
             data = await self.visualizer_agent.process(data)
-            print(f"[DEBUG] [{candidate_id}] [OK] visualizer 完成")
+            logger.debug(f"[{candidate_id}] ✅ visualizer 完成")
             data["eval_image_field"] = f"target_{task_name}_stylist_desc0_base64_jpg"
 
         elif exp_mode in ["dev_planner_critic", "demo_planner_critic"]:
             max_rounds = data.get("max_critic_rounds", 3)
-            print(f"[DEBUG] [{candidate_id}] 流水线: retriever → planner → visualizer → critic×{max_rounds}")
+            logger.debug(f"[{candidate_id}] 流水线: retriever → planner → visualizer → critic×{max_rounds}")
             self._emit_status(status_callback, candidate_id, "retriever 检索中")
             data = await self.retriever_agent.process(data, retrieval_setting=retrieval_setting)
-            print(f"[DEBUG] [{candidate_id}] [OK] retriever 完成")
+            logger.debug(f"[{candidate_id}] ✅ retriever 完成")
             self._emit_status(status_callback, candidate_id, "planner 规划中")
             data = await self.planner_agent.process(data)
-            print(f"[DEBUG] [{candidate_id}] [OK] planner 完成, desc0 长度={len(data.get(f'target_{task_name}_desc0', ''))}")
+            logger.debug(f"[{candidate_id}] ✅ planner 完成, desc0 长度={len(data.get(f'target_{task_name}_desc0', ''))}")
             self._emit_status(status_callback, candidate_id, "visualizer 生图中")
             data = await self.visualizer_agent.process(data)
             has_img = f"target_{task_name}_desc0_base64_jpg" in data and bool(data.get(f"target_{task_name}_desc0_base64_jpg"))
-            print(f"[DEBUG] [{candidate_id}] [OK] visualizer 完成, 图像生成={'成功' if has_img else '失败'}")
+            logger.debug(f"[{candidate_id}] ✅ visualizer 完成, 图像生成={'成功' if has_img else '失败'}")
             data = await self._run_critic_iterations(
                 data,
                 task_name,
@@ -214,25 +218,25 @@ class PaperVizProcessor:
                 status_callback=status_callback,
                 candidate_id=candidate_id,
             )
-            print(f"[DEBUG] [{candidate_id}] [OK] critic 迭代完成, eval_image_field={data.get('eval_image_field')}")
+            logger.debug(f"[{candidate_id}] ✅ critic 迭代完成, eval_image_field={data.get('eval_image_field')}")
             if "demo" in exp_mode: do_eval = False
 
         elif exp_mode in ["dev_full", "demo_full"]:
             max_rounds = data.get("max_critic_rounds", self.exp_config.max_critic_rounds)
-            print(f"[DEBUG] [{candidate_id}] 流水线: retriever → planner → stylist → visualizer → critic×{max_rounds}")
+            logger.debug(f"[{candidate_id}] 流水线: retriever → planner → stylist → visualizer → critic×{max_rounds}")
             self._emit_status(status_callback, candidate_id, "retriever 检索中")
             data = await self.retriever_agent.process(data, retrieval_setting=retrieval_setting)
-            print(f"[DEBUG] [{candidate_id}] [OK] retriever 完成")
+            logger.debug(f"[{candidate_id}] ✅ retriever 完成")
             self._emit_status(status_callback, candidate_id, "planner 规划中")
             data = await self.planner_agent.process(data)
-            print(f"[DEBUG] [{candidate_id}] [OK] planner 完成, desc0 长度={len(data.get(f'target_{task_name}_desc0', ''))}")
+            logger.debug(f"[{candidate_id}] ✅ planner 完成, desc0 长度={len(data.get(f'target_{task_name}_desc0', ''))}")
             self._emit_status(status_callback, candidate_id, "stylist 风格优化中")
             data = await self.stylist_agent.process(data)
-            print(f"[DEBUG] [{candidate_id}] [OK] stylist 完成")
+            logger.debug(f"[{candidate_id}] ✅ stylist 完成")
             self._emit_status(status_callback, candidate_id, "visualizer 生图中")
             data = await self.visualizer_agent.process(data)
             has_img = f"target_{task_name}_stylist_desc0_base64_jpg" in data and bool(data.get(f"target_{task_name}_stylist_desc0_base64_jpg"))
-            print(f"[DEBUG] [{candidate_id}] [OK] visualizer 完成, 图像生成={'成功' if has_img else '失败'}")
+            logger.debug(f"[{candidate_id}] ✅ visualizer 完成, 图像生成={'成功' if has_img else '失败'}")
             data = await self._run_critic_iterations(
                 data,
                 task_name,
@@ -241,17 +245,17 @@ class PaperVizProcessor:
                 status_callback=status_callback,
                 candidate_id=candidate_id,
             )
-            print(f"[DEBUG] [{candidate_id}] [OK] critic 迭代完成, eval_image_field={data.get('eval_image_field')}")
+            logger.debug(f"[{candidate_id}] ✅ critic 迭代完成, eval_image_field={data.get('eval_image_field')}")
             if "demo" in exp_mode: do_eval = False
 
         elif exp_mode == "dev_polish":
-            print(f"[DEBUG] [{candidate_id}] 流水线: polish_agent")
+            logger.debug(f"[{candidate_id}] 流水线: polish_agent")
             self._emit_status(status_callback, candidate_id, "polish 精修中")
             data = await self.polish_agent.process(data)
             data["eval_image_field"] = f"polished_{task_name}_base64_jpg"
 
         elif exp_mode == "dev_retriever":
-            print(f"[DEBUG] [{candidate_id}] 流水线: retriever_agent")
+            logger.debug(f"[{candidate_id}] 流水线: retriever_agent")
             self._emit_status(status_callback, candidate_id, "retriever 检索中")
             data = await self.retriever_agent.process(data)
             do_eval = False
@@ -259,7 +263,7 @@ class PaperVizProcessor:
         else:
             raise ValueError(f"Unknown experiment name: {exp_mode}")
 
-        print(f"[DEBUG] [{candidate_id}] ── process_single_query 完成 ──")
+        logger.debug(f"[{candidate_id}] ── process_single_query 完成 ──")
         self._emit_status(status_callback, candidate_id, "候选流程完成")
 
         if do_eval:
@@ -307,7 +311,7 @@ class PaperVizProcessor:
                     )
                     try:
                         safe_detail = err_detail.encode("utf-8", errors="backslashreplace").decode("utf-8", errors="ignore")
-                        print(f"[DEBUG] [ERR] candidate={candidate_id} failed: {err_summary}\n{safe_detail}")
+                        logger.error(f"❌ candidate={candidate_id} 失败: {err_summary}\n{safe_detail}")
                     except Exception:
                         pass
                     return {

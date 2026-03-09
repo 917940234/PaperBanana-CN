@@ -26,6 +26,10 @@ from utils import generation_utils, image_utils
 from utils.plot_executor import execute_plot_code
 from .base_agent import BaseAgent
 
+from utils.log_config import get_logger
+
+logger = get_logger("VisualizerAgent")
+
 
 def _safe_preview_for_log(value, max_len: int = 20) -> str:
     """
@@ -82,7 +86,7 @@ class VisualizerAgent(BaseAgent):
         cfg = self.task_config
         task_name = cfg["task_name"]
         candidate_id = data.get("candidate_id", "N/A")
-        print(f"[DEBUG] [VisualizerAgent] 开始处理, task={task_name}, provider={self.exp_config.provider}, model={self.model_name}, 图像生成={cfg['use_image_generation']}")
+        logger.debug(f"🖼️ 开始处理, task={task_name}, provider={self.exp_config.provider}, model={self.model_name}, 图像生成={cfg['use_image_generation']}")
 
         desc_keys_to_process = []
         for key in [
@@ -105,7 +109,7 @@ class VisualizerAgent(BaseAgent):
                         data[f"{key}_base64_jpg"] = data[prev_base64_key]
                         if prev_mime_key in data:
                             data[f"{key}_mime_type"] = data[prev_mime_key]
-                        print(f"[Visualizer] Reused base64 from round {round_idx - 1} for {key}")
+                        logger.debug(f"🔄 复用第 {round_idx - 1} 轮的 base64 数据到 {key}")
                         continue
 
                 desc_keys_to_process.append(key)
@@ -113,12 +117,12 @@ class VisualizerAgent(BaseAgent):
         if not cfg["use_image_generation"]:
             loop = asyncio.get_running_loop()
 
-        print(f"[DEBUG] [VisualizerAgent] 待处理 desc_keys: {desc_keys_to_process}")
+        logger.debug(f"📋 待处理 desc_keys: {desc_keys_to_process}")
 
         for desc_key in desc_keys_to_process:
             prompt_text = cfg["prompt_template"].format(desc=data[desc_key])
             content_list = [{"type": "text", "text": prompt_text}]
-            print(f"[DEBUG] [VisualizerAgent] 处理 {desc_key}, prompt 长度={len(prompt_text)}")
+            logger.debug(f"🔧 处理 {desc_key}, prompt 长度={len(prompt_text)}")
 
             # 根据 provider 路由 API 调用
             if self.exp_config.provider == "evolink":
@@ -209,21 +213,14 @@ class VisualizerAgent(BaseAgent):
                 raise ValueError(f"Unsupported model: {self.model_name}")
 
             if not response_list or not response_list[0]:
-                print(f"[DEBUG] [VisualizerAgent] [WARN] {desc_key}: API 返回空响应")
+                logger.warning(f"⚠️  {desc_key}: API 返回空响应")
                 continue
 
             resp0 = response_list[0]
             preview = _safe_preview_for_log(resp0, max_len=20)
-            try:
-                print(
-                    f"[DEBUG] [VisualizerAgent] {desc_key}: API 响应长度={len(resp0)}, 值前20字={preview}..."
-                )
-            except OSError as log_err:
-                # Avoid crashing the pipeline because of logging side effects.
-                try:
-                    print(f"[DEBUG] [VisualizerAgent] 日志输出异常，已跳过详细预览: {log_err!r}")
-                except Exception:
-                    pass
+            logger.debug(
+                f"🔧 {desc_key}: API 响应长度={len(resp0)}, 值前20字={preview}..."
+            )
 
             # Post-process based on task type
             if cfg["use_image_generation"]:
@@ -232,12 +229,12 @@ class VisualizerAgent(BaseAgent):
                     mime_type = image_utils.detect_image_mime_from_b64(raw_image_b64)
                     data[f"{desc_key}_base64_jpg"] = raw_image_b64
                     data[f"{desc_key}_mime_type"] = mime_type
-                    print(
-                        f"[DEBUG] [VisualizerAgent] [OK] {desc_key}_base64_jpg 已生成, "
+                    logger.info(
+                        f"✅ {desc_key}_base64_jpg 已生成, "
                         f"mime={mime_type}, 大小={len(raw_image_b64)}"
                     )
                 else:
-                    print(f"[DEBUG] [VisualizerAgent] [ERR] {desc_key}: 图像输出为空")
+                    logger.error(f"❌ {desc_key}: 图像输出为空")
             else:
                 raw_code = response_list[0]
 

@@ -24,6 +24,10 @@ from PIL import Image
 from utils import generation_utils
 from .base_agent import BaseAgent
 
+from utils.log_config import get_logger
+
+logger = get_logger("PlannerAgent")
+
 
 class PlannerAgent(BaseAgent):
     """Planner Agent to generate images based on user queries"""
@@ -50,7 +54,7 @@ class PlannerAgent(BaseAgent):
 
     async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
         cfg = self.task_config
-        print(f"[DEBUG] [PlannerAgent] 开始处理, task={cfg['task_name']}, provider={self.exp_config.provider}, model={self.model_name}")
+        logger.debug(f"📝 开始处理, task={cfg['task_name']}, provider={self.exp_config.provider}, model={self.model_name}")
         candidate_id = data.get("candidate_id", "N/A")
 
         raw_content = data["content"]
@@ -95,7 +99,7 @@ class PlannerAgent(BaseAgent):
         user_prompt += ":"
 
         content_list.append({"type": "text", "text": user_prompt})
-        print(f"[DEBUG] [PlannerAgent] content_list 长度={len(content_list)}, 示例数={len(examples)}")
+        logger.debug(f"📋 content_list 长度={len(content_list)}, 示例数={len(examples)}")
 
         # 调用文本生成 API（自动路由到对应 provider）
         response_list = await self.call_text_api(
@@ -107,7 +111,7 @@ class PlannerAgent(BaseAgent):
         for idx, response in enumerate(response_list):
             data[f"target_{cfg['task_name']}_desc{idx}"] = response.strip()
 
-        print(f"[DEBUG] [PlannerAgent] 完成, 生成 {len(response_list)} 个描述, desc0 长度={len(response_list[0]) if response_list else 0}")
+        logger.info(f"✅ 完成, 生成 {len(response_list)} 个描述, desc0 长度={len(response_list[0]) if response_list else 0}")
         return data
 DIAGRAM_PLANNER_AGENT_SYSTEM_PROMPT = """
 I am working on a task: given the 'Methodology' section of a paper, and the caption of the desired figure, automatically generate a corresponding illustrative diagram. I will input the text of the 'Methodology' section, the figure caption, and your output should be a detailed description of an illustrative figure that effectively represents the methods described in the text.

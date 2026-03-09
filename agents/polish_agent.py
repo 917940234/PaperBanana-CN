@@ -25,6 +25,10 @@ from PIL import Image
 from utils import generation_utils, image_utils
 from .base_agent import BaseAgent
 
+from utils.log_config import get_logger
+
+logger = get_logger("PolishAgent")
+
 
 def _load_image_as_base64(image_path: str) -> tuple[str | None, str | None]:
     """Load an image from path and return (base64, mime_type)."""
@@ -35,7 +39,7 @@ def _load_image_as_base64(image_path: str) -> tuple[str | None, str | None]:
             mime_type = image_utils.detect_image_mime_from_bytes(img_data)
             return image_b64, mime_type
     except Exception as e:
-        print(f"❌ Error loading image {image_path}: {e}")
+        logger.error(f"❌ 加载图像失败 {image_path}: {e}")
         return None, None
 
 
@@ -88,7 +92,7 @@ class PolishAgent(BaseAgent):
             )
             return response_list[0] if response_list else ""
         except Exception as e:
-            print(f"生成建议时出错: {e}")
+            logger.error(f"❌ 生成建议时出错: {e}")
             return ""
 
     async def process(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -97,14 +101,14 @@ class PolishAgent(BaseAgent):
 
         gt_image_path_rel = data.get("path_to_gt_image")
         if not gt_image_path_rel:
-            print(f"⚠️  No GT image path found in data")
+            logger.warning("⚠️  data 中没有 GT 图像路径")
             return data
 
         gt_image_path = self.exp_config.work_dir / f"data/PaperBananaBench/{task_name}" / gt_image_path_rel
 
         gt_image_b64, gt_image_mime = _load_image_as_base64(str(gt_image_path))
         if not gt_image_b64:
-            print(f"⚠️  Failed to load GT image from {gt_image_path}")
+            logger.warning(f"⚠️  无法加载 GT 图像: {gt_image_path}")
             return data
         if not gt_image_mime:
             gt_image_mime = "image/jpeg"
@@ -114,23 +118,23 @@ class PolishAgent(BaseAgent):
             with open(style_guide_path, "r", encoding="utf-8") as f:
                 style_guide = f.read()
         except Exception as e:
-            print(f"❌ Error loading style guide from {style_guide_path}: {e}")
+            logger.error(f"❌ 加载风格指南失败 {style_guide_path}: {e}")
             return data
 
-        print(f"🎨 [Step 1] Generating suggestions for {task_name}...")
+        logger.info(f"🎨 [第1步] 为 {task_name} 生成建议...")
         suggestions = await self._generate_suggestions(gt_image_b64, gt_image_mime, style_guide)
 
         if not suggestions or "No changes needed" in suggestions:
-            print(f"✨ No changes needed for this image.")
+            logger.info("✨ 该图像无需修改")
             pass
 
         if suggestions:
             data[f"suggestions_{task_name}"] = suggestions
 
-        print(f"📝 Suggestions: {suggestions[:200]}...")
+        logger.info(f"📝 建议: {suggestions[:200]}...")
 
         # Step 2: Polish Image using suggestions
-        print(f"🎨 [Step 2] Polishing image with suggestions...")
+        logger.info(f"🎨 [第2步] 使用建议精修图像...")
         user_prompt = f"Please polish this image based on the following suggestions:\n\n{suggestions}\n\nPolished Image:"
 
         content_list = [
@@ -149,7 +153,7 @@ class PolishAgent(BaseAgent):
             # Evolink 模式需要先上传参考图
             image_urls = None
             if self.exp_config.provider == "evolink":
-                print(f"[Polish] 上传参考图到 Evolink 文件服务...")
+                logger.info("📤 上传参考图到 Evolink 文件服务...")
                 ref_image_url = await generation_utils.upload_image_to_evolink(
                     gt_image_b64, media_type=gt_image_mime
                 )
@@ -173,10 +177,10 @@ class PolishAgent(BaseAgent):
                 data[output_key] = raw_image_b64
                 data[output_mime_key] = image_utils.detect_image_mime_from_b64(raw_image_b64)
             else:
-                print(f"模型未返回图像响应")
+                logger.warning("⚠️  模型未返回图像响应")
 
         except Exception as e:
-            print(f"❌ Error during image generation: {e}")
+            logger.error(f"❌ 图像生成过程中出错: {e}")
 
         return data
 

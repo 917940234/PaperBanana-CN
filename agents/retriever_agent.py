@@ -16,6 +16,24 @@
 Retriever Agent - 检索相关参考示例。
 """
 
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Retriever Agent - 检索相关参考示例。
+"""
+
 import json
 import random
 from typing import Dict, Any
@@ -24,6 +42,10 @@ from PIL import Image
 
 from utils import generation_utils
 from .base_agent import BaseAgent
+
+from utils.log_config import get_logger
+
+logger = get_logger("RetrieverAgent")
 
 
 class RetrieverAgent(BaseAgent):
@@ -59,46 +81,46 @@ class RetrieverAgent(BaseAgent):
     async def process(self, data: Dict[str, Any], retrieval_setting: str = "auto") -> Dict[str, Any]:
         cfg = self.task_config
         candidate_id = data.get("candidate_id", "N/A")
-        print(f"[DEBUG] [RetrieverAgent] 开始处理, setting={retrieval_setting}, task={cfg['task_name']}, provider={self.exp_config.provider}")
+        logger.debug(f"🔍 开始处理, setting={retrieval_setting}, task={cfg['task_name']}, provider={self.exp_config.provider}")
 
         import os
         ref_file = self.exp_config.work_dir / f"data/PaperBananaBench/{cfg['task_name']}/ref.json"
 
         if retrieval_setting in ["auto", "auto-full", "random"] and not ref_file.exists():
-            print(f"Warning: Reference file not found at {ref_file}. Falling back to retrieval_setting='none'.")
+            logger.warning(f"⚠️  参考文件未找到: {ref_file}，回退到 retrieval_setting='none'")
             retrieval_setting = "none"
 
         if retrieval_setting == "manual":
             manual_file = self.exp_config.work_dir / f"data/PaperBananaBench/{cfg['task_name']}/agent_selected_12.json"
             if not manual_file.exists():
-                print(f"Warning: Manual reference file not found at {manual_file}. Falling back to retrieval_setting='none'.")
+                logger.warning(f"⚠️  手动参考文件未找到: {manual_file}，回退到 retrieval_setting='none'")
                 retrieval_setting = "none"
 
         if retrieval_setting == "none":
             data["top10_references"] = []
             data["retrieved_examples"] = []
-            print(f"[DEBUG] [RetrieverAgent] 跳过检索 (setting=none)")
+            logger.debug("⏭️  跳过检索 (setting=none)")
 
         elif retrieval_setting == "manual":
             ids, examples = self._load_manual_references(cfg)
             data["top10_references"] = ids
             data["retrieved_examples"] = examples
-            print(f"[DEBUG] [RetrieverAgent] 手动检索完成, {len(ids)} 个参考")
+            logger.info(f"✅ 手动检索完成, {len(ids)} 个参考")
 
         elif retrieval_setting == "random":
             data["top10_references"] = self._load_random_references(cfg)
             data["retrieved_examples"] = []
-            print(f"[DEBUG] [RetrieverAgent] 随机检索完成, {len(data['top10_references'])} 个参考")
+            logger.info(f"✅ 随机检索完成, {len(data['top10_references'])} 个参考")
 
         elif retrieval_setting == "auto":
             data["top10_references"] = await self._retrieve_and_parse(data, cfg, lite=True)
             data["retrieved_examples"] = []
-            print(f"[DEBUG] [RetrieverAgent] 自动检索完成 (lite), {len(data['top10_references'])} 个参考: {data['top10_references']}")
+            logger.info(f"✅ 自动检索完成 (lite), {len(data['top10_references'])} 个参考: {data['top10_references']}")
 
         elif retrieval_setting == "auto-full":
             data["top10_references"] = await self._retrieve_and_parse(data, cfg, lite=False)
             data["retrieved_examples"] = []
-            print(f"[DEBUG] [RetrieverAgent] 自动检索完成 (full), {len(data['top10_references'])} 个参考: {data['top10_references']}")
+            logger.info(f"✅ 自动检索完成 (full), {len(data['top10_references'])} 个参考: {data['top10_references']}")
         else:
             raise ValueError(f"Unknown retrieval_setting: {retrieval_setting}")
 
@@ -154,7 +176,7 @@ class RetrieverAgent(BaseAgent):
         content_list = [{"type": "text", "text": user_prompt}]
 
         prompt_chars = len(user_prompt)
-        print(f"[DEBUG] [RetrieverAgent] auto 检索 prompt: {prompt_chars:,} 字符 (~{prompt_chars//4:,} tokens), lite={lite}")
+        logger.debug(f"📊 auto 检索 prompt: {prompt_chars:,} 字符 (~{prompt_chars//4:,} tokens), lite={lite}")
 
         # 根据 provider 路由 API 调用
         if self.exp_config.provider == "evolink":
@@ -202,8 +224,8 @@ class RetrieverAgent(BaseAgent):
             else:
                 raise ValueError(f"Unknown task_name: {task_name}")
         except Exception as e:
-            print(f"Warning: Failed to parse retrieval result: {e}")
-            print(f"Raw response: {raw_response[:200]}...")
+            logger.warning(f"⚠️  解析检索结果失败: {e}")
+            logger.debug(f"   原始响应: {raw_response[:200]}...")
             return []
 
 

@@ -25,6 +25,10 @@ import json_repair
 from utils import generation_utils
 from .base_agent import BaseAgent
 
+from utils.log_config import get_logger
+
+logger = get_logger("CriticAgent")
+
 
 class CriticAgent(BaseAgent):
     """Critic Agent to critique and refine figure descriptions"""
@@ -54,7 +58,7 @@ class CriticAgent(BaseAgent):
 
         round_idx = data.get("current_critic_round", 0)
         candidate_id = data.get("candidate_id", "N/A")
-        print(f"[DEBUG] [CriticAgent] 开始处理, round={round_idx}, source={source}, provider={self.exp_config.provider}")
+        logger.debug(f"🔍 开始处理, round={round_idx}, source={source}, provider={self.exp_config.provider}")
 
         if round_idx == 0:
             if source == "stylist":
@@ -95,7 +99,7 @@ class CriticAgent(BaseAgent):
                 },
             })
         else:
-            print(f"[WARN] [Critic] No valid image found for round {round_idx}. Using text-only critique mode.")
+            logger.warning(f"⚠️  第 {round_idx} 轮无有效图像，使用纯文本评审模式")
             content_list.append({
                 "type": "text",
                 "text": "\n[SYSTEM NOTICE] The plot image could not be generated based on the current description (likely due to invalid code). Please check the description for errors (e.g., syntax issues, missing data) and provide a revised version."
@@ -123,9 +127,9 @@ class CriticAgent(BaseAgent):
         except Exception as e:
             eval_result = {}
             import traceback
-            print(f"[WARN] [CriticAgent] Failed to parse JSON response: {e}")
-            print(f"[WARN] [CriticAgent] Traceback: {traceback.format_exc()}")
-            print(f"[WARN] [CriticAgent] Raw response (first 500 chars): {cleaned_response[:500]}")
+            logger.warning(f"⚠️  解析 JSON 响应失败: {e}")
+            logger.debug(f"   Traceback: {traceback.format_exc()}")
+            logger.debug(f"   原始响应（前500字）: {cleaned_response[:500]}")
 
         critic_suggestions = eval_result.get("critic_suggestions", "No changes needed.")
         revised_description = eval_result.get("revised_description", "No changes needed.")
@@ -135,9 +139,9 @@ class CriticAgent(BaseAgent):
 
         if revised_description.strip() == "No changes needed.":
             data[f"target_{task_name}_critic_desc{round_idx}"] = detailed_description
-            print(f"[DEBUG] [CriticAgent] round={round_idx}: 无需修改")
+            logger.info(f"✅ round={round_idx}: 无需修改")
         else:
-            print(f"[DEBUG] [CriticAgent] round={round_idx}: 建议长度={len(critic_suggestions)}, 修订描述长度={len(revised_description)}")
+            logger.info(f"📝 round={round_idx}: 建议长度={len(critic_suggestions)}, 修订描述长度={len(revised_description)}")
 
         return data
 

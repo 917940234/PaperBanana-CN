@@ -11,6 +11,10 @@ import aiohttp
 
 from .base import BaseProvider
 
+from utils.log_config import get_logger
+
+logger = get_logger("EvolinkProvider")
+
 
 class ClientError(Exception):
     """4xx 客户端错误，不应重试（如 400 Bad Request、401 Unauthorized）"""
@@ -171,8 +175,8 @@ class EvolinkProvider(BaseProvider):
 
     async def _post_json(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """发送 POST 请求并返回 JSON 响应"""
-        print(f"[DEBUG] [Evolink] POST {url}")
-        print(f"[DEBUG] [Evolink]   model={payload.get('model', 'N/A')}, payload keys={list(payload.keys())}")
+        logger.debug(f"📤 POST {url}")
+        logger.debug(f"   model={payload.get('model', 'N/A')}, payload keys={list(payload.keys())}")
         session = await self._get_session()
         async with session.post(
             url,
@@ -182,10 +186,10 @@ class EvolinkProvider(BaseProvider):
         ) as resp:
             status = resp.status
             body = await resp.json()
-            print(f"[DEBUG] [Evolink]   响应 status={status}, keys={list(body.keys()) if isinstance(body, dict) else type(body)}")
+            logger.debug(f"   响应 status={status}, keys={list(body.keys()) if isinstance(body, dict) else type(body)}")
             if status >= 400:
                 error_msg = body.get("error", body) if isinstance(body, dict) else body
-                print(f"[DEBUG] [Evolink]   [ERR] 错误详情: {error_msg}")
+                logger.error(f"❌ 错误详情: {error_msg}")
                 # 4xx 客户端错误不重试，直接抛出特定异常
                 if 400 <= status < 500 and status != 429:
                     raise ClientError(f"HTTP {status}: {error_msg}")
@@ -203,7 +207,7 @@ class EvolinkProvider(BaseProvider):
             status = resp.status
             body = await resp.json()
             if status >= 400:
-                print(f"[DEBUG] [Evolink] GET {url} [ERR] status={status}, body={body}")
+                logger.error(f"❌ GET {url} 失败, status={status}, body={body}")
             resp.raise_for_status()
             return body
 
@@ -216,7 +220,7 @@ class EvolinkProvider(BaseProvider):
                 image_data = await resp.read()
                 return base64.b64encode(image_data).decode("utf-8")
         except Exception as e:
-            print(f"下载图片失败 ({url}): {e}")
+            logger.error(f"❌ 下载图片失败 ({url}): {e}")
             return None
 
     # ==================== 文件上传 ====================
@@ -249,13 +253,13 @@ class EvolinkProvider(BaseProvider):
                 body = await resp.json()
                 if status == 200 and body.get("success"):
                     file_url = body.get("data", {}).get("file_url", "")
-                    print(f"[Evolink 上传] [OK] 图片已上传: {file_url[:80]}...")
+                    logger.info(f"✅ 图片已上传: {file_url[:80]}...")
                     return file_url
                 else:
-                    print(f"[Evolink 上传] [ERR] 上传失败: status={status}, body={body}")
+                    logger.error(f"❌ 上传失败: status={status}, body={body}")
                     return None
         except Exception as e:
-            print(f"[Evolink 上传] [ERR] 上传异常: {e}")
+            logger.error(f"❌ 上传异常: {e}")
             return None
 
     # ==================== 文本生成 ====================
@@ -288,8 +292,8 @@ class EvolinkProvider(BaseProvider):
         # 计算内容摘要
         content_types = [item.get("type", "?") for item in contents]
         sys_len = len(system_prompt) if system_prompt else 0
-        print(f"[DEBUG] [Evolink 文本] 请求: model={model_name}, temp={temperature}, max_tokens={max_output_tokens}")
-        print(f"[DEBUG] [Evolink 文本]   内容: {content_types}, system_prompt 长度={sys_len}")
+        logger.debug(f"📤 文本生成请求: model={model_name}, temp={temperature}, max_tokens={max_output_tokens}")
+        logger.debug(f"   内容类型: {content_types}, system_prompt 长度={sys_len}")
 
         for attempt in range(max_attempts):
             try:
@@ -301,30 +305,30 @@ class EvolinkProvider(BaseProvider):
                     text = choices[0].get("message", {}).get("content", "")
                     if text.strip():
                         usage = response.get("usage", {})
-                        print(f"[DEBUG] [Evolink 文本] [OK] 成功, 响应长度={len(text)}, usage={usage}")
+                        logger.info(f"✅ 文本生成成功, 响应长度={len(text)}, usage={usage}")
                         return [text]
 
-                print(f"[Evolink 文本] 响应为空，{retry_delay}s 后重试...")
+                logger.warning(f"⚠️  文本响应为空，{retry_delay}s 后重试...")
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(retry_delay)
 
             except ClientError as e:
                 # 4xx 客户端错误，立即失败不重试（模型名错误、参数错误等）
                 context_msg = f" ({error_context})" if error_context else ""
-                print(f"[Evolink 文本] [ERR] 客户端错误{context_msg}: {e}。不再重试。")
+                logger.error(f"❌ 客户端错误{context_msg}: {e}。不再重试")
                 return ["Error"]
 
             except Exception as e:
                 context_msg = f" ({error_context})" if error_context else ""
                 current_delay = min(retry_delay * (2 ** attempt), 30)
-                print(
-                    f"[Evolink 文本] 第 {attempt + 1} 次尝试失败{context_msg}: {e}。"
+                logger.warning(
+                    f"⚠️  文本生成第 {attempt + 1} 次尝试失败{context_msg}: {e}。"
                     f"{current_delay}s 后重试..."
                 )
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(current_delay)
                 else:
-                    print(f"[Evolink 文本] 全部 {max_attempts} 次尝试失败{context_msg}")
+                    logger.error(f"❌ 文本生成全部 {max_attempts} 次尝试失败{context_msg}")
 
         return ["Error"]
 
@@ -352,10 +356,10 @@ class EvolinkProvider(BaseProvider):
         3. 下载图片 URL 并转换为 base64
         """
         create_url = f"{self.base_url}/v1/images/generations"
-        print(f"[DEBUG] [Evolink 图像] 请求: model={model_name}, ratio={aspect_ratio}, quality={quality}")
+        logger.debug(f"🖼️ 图像生成请求: model={model_name}, ratio={aspect_ratio}, quality={quality}")
         if image_urls:
-            print(f"[DEBUG] [Evolink 图像]   附带 {len(image_urls)} 张参考图片")
-        print(f"[DEBUG] [Evolink 图像]   prompt 长度={len(prompt)}, 前100字: {prompt[:100]}...")
+            logger.debug(f"   附带 {len(image_urls)} 张参考图片")
+        logger.debug(f"   prompt 长度={len(prompt)}, 前100字: {prompt[:100]}...")
 
         for attempt in range(max_attempts):
             try:
@@ -371,12 +375,12 @@ class EvolinkProvider(BaseProvider):
                 task_id = create_response.get("id")
 
                 if not task_id:
-                    print(f"[Evolink 图像] 创建任务失败，未返回任务 ID")
+                    logger.warning("⚠️  创建图像任务失败，未返回任务 ID")
                     if attempt < max_attempts - 1:
                         await asyncio.sleep(retry_delay)
                     continue
 
-                print(f"[Evolink 图像] 任务已创建: {task_id}")
+                logger.info(f"🖼️ 图像任务已创建: {task_id}")
 
                 # 步骤 2：轮询任务状态
                 poll_url = f"{self.base_url}/v1/tasks/{task_id}"
@@ -393,48 +397,48 @@ class EvolinkProvider(BaseProvider):
                         results = poll_response.get("results", [])
                         if results:
                             image_url = results[0]
-                            print(f"[Evolink 图像] 任务完成，下载图片: {image_url[:80]}...")
+                            logger.info(f"✅ 图像任务完成，下载图片: {image_url[:80]}...")
                             b64_image = await self._download_image_as_base64(image_url)
                             if b64_image:
                                 return [b64_image]
                             else:
-                                print(f"[Evolink 图像] 图片下载失败")
+                                logger.error("❌ 图片下载失败")
                                 break
                         else:
-                            print(f"[Evolink 图像] 任务完成但无图片结果")
+                            logger.warning("⚠️  图像任务完成但无图片结果")
                             break
 
                     elif status in ("failed", "cancelled"):
-                        print(f"[Evolink 图像] 任务失败: {status}")
+                        logger.error(f"❌ 图像任务失败: {status}")
                         break
 
                     else:
                         # 仍在处理中
                         if poll_count % 5 == 0:
-                            print(f"[Evolink 图像] 轮询 #{poll_count + 1}: {status}, 进度: {progress}%")
+                            logger.debug(f"🔄 轮询 #{poll_count + 1}: {status}, 进度: {progress}%")
 
                 # 如果轮询结束仍未完成
                 context_msg = f" ({error_context})" if error_context else ""
-                print(f"[Evolink 图像] 第 {attempt + 1} 次尝试未成功{context_msg}")
+                logger.warning(f"⚠️  第 {attempt + 1} 次图像生成尝试未成功{context_msg}")
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(retry_delay)
 
             except ClientError as e:
                 # 4xx 客户端错误，立即失败不重试
                 context_msg = f" ({error_context})" if error_context else ""
-                print(f"[Evolink 图像] [ERR] 客户端错误{context_msg}: {e}。不再重试。")
+                logger.error(f"❌ 客户端错误{context_msg}: {e}。不再重试")
                 return ["Error"]
 
             except Exception as e:
                 context_msg = f" ({error_context})" if error_context else ""
                 current_delay = min(retry_delay * (2 ** attempt), 60)
-                print(
-                    f"[Evolink 图像] 第 {attempt + 1} 次尝试失败{context_msg}: {e}。"
+                logger.warning(
+                    f"⚠️  图像生成第 {attempt + 1} 次尝试失败{context_msg}: {e}。"
                     f"{current_delay}s 后重试..."
                 )
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(current_delay)
                 else:
-                    print(f"[Evolink 图像] 全部 {max_attempts} 次尝试失败{context_msg}")
+                    logger.error(f"❌ 图像生成全部 {max_attempts} 次尝试失败{context_msg}")
 
         return ["Error"]

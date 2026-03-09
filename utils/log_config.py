@@ -14,10 +14,39 @@
 
 """
 统一日志配置 — 为 PaperBanana 提供一致的日志格式和级别管理。
+
+特性：
+- Windows 终端安全的 emoji 输出
+- 统一的日志格式：时间 [级别] 模块名 | 消息
 """
 
 import logging
 import sys
+
+
+class SafeStreamHandler(logging.StreamHandler):
+    """
+    Windows 终端安全的日志 Handler。
+
+    在 Windows 上，某些终端（如 cmd.exe）不支持 UTF-8 emoji，
+    直接输出会导致 UnicodeEncodeError。此 Handler 自动降级为
+    backslashreplace 编码，确保日志永远不会因编码问题崩溃。
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            stream = self.stream
+            try:
+                stream.write(msg + self.terminator)
+                self.flush()
+            except UnicodeEncodeError:
+                # Windows 终端不支持某些字符时，降级编码
+                encoded = msg.encode(stream.encoding or "utf-8", errors="backslashreplace")
+                stream.buffer.write(encoded + self.terminator.encode(stream.encoding or "utf-8"))
+                self.flush()
+        except Exception:
+            self.handleError(record)
 
 
 def setup_logging(level: str = "INFO") -> None:
@@ -29,12 +58,11 @@ def setup_logging(level: str = "INFO") -> None:
     """
     log_level = getattr(logging, level.upper(), logging.INFO)
 
-    # 使用 UTF-8 编码的 StreamHandler，避免 Windows 终端编码问题
-    handler = logging.StreamHandler(sys.stdout)
+    handler = SafeStreamHandler(sys.stdout)
     handler.setLevel(log_level)
 
     formatter = logging.Formatter(
-        fmt="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
+        fmt="%(asctime)s [%(levelname)s] %(name)s | %(message)s",
         datefmt="%H:%M:%S",
     )
     handler.setFormatter(formatter)

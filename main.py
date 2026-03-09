@@ -23,18 +23,17 @@ from pathlib import Path
 import aiofiles
 import numpy as np
 
-from utils.log_config import setup_logging
+from utils.log_config import setup_logging, get_logger
 setup_logging("INFO")
 
-from agents.vanilla_agent import VanillaAgent
-from agents.planner_agent import PlannerAgent
-from agents.visualizer_agent import VisualizerAgent
-from agents.stylist_agent import StylistAgent
-from agents.critic_agent import CriticAgent
-from agents.retriever_agent import RetrieverAgent
-from agents.polish_agent import PolishAgent
+from agents import (
+    VanillaAgent, PlannerAgent, VisualizerAgent,
+    StylistAgent, CriticAgent, RetrieverAgent, PolishAgent
+)
 
 from utils import config, paperviz_processor
+
+logger = get_logger("Main")
 
 
 async def main():
@@ -102,7 +101,7 @@ async def main():
     input_filename = base_path / exp_config.task_name / f"{exp_config.split_name}.json"
     output_filename = exp_config.result_dir / f"{exp_config.exp_name}.json"
     
-    print(f"Input file: {input_filename}", f"Output file: {output_filename}")
+    logger.info(f"📁 输入文件: {input_filename}  输出文件: {output_filename}")
     with open(input_filename, "r", encoding="utf-8") as f:
         data_list = json.load(f)
 
@@ -120,11 +119,11 @@ async def main():
 
     # Batch process documents
     concurrent_num = exp_config.max_concurrent
-    print(f"Using max concurrency: {concurrent_num}")
+    logger.info(f"🚀 最大并发数: {concurrent_num}")
     all_result_list = []
 
     async def save_results_and_scores(current_results):
-        print(f"Incremental saving results (count: {len(current_results)}) to {output_filename}")
+        logger.info(f"💾 增量保存结果（共 {len(current_results)} 条）到 {output_filename}")
         async with aiofiles.open(
             output_filename, "w", encoding="utf-8", errors="surrogateescape"
         ) as f:
@@ -144,7 +143,7 @@ async def main():
 
     # Final save
     await save_results_and_scores(all_result_list)
-    print("Processing completed.")
+    logger.info("✅ 处理完成")
 
 
 if __name__ == "__main__":
